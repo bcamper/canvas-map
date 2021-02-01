@@ -27,41 +27,55 @@ function cacheKey (layers) {
 
 // Merge matching layer trees into a final draw group
 export function mergeTrees(matchingTrees, group) {
-    let draws, treeDepth = 0;
-
     // Find deepest tree
-    for (let t=0; t < matchingTrees.length; t++) {
-        if (matchingTrees[t].length > treeDepth) {
-            treeDepth = matchingTrees[t].length;
+    let maxTreeDepth = 0;
+    for (let t = 0; t < matchingTrees.length; t++) {
+        if (matchingTrees[t].length > maxTreeDepth) {
+            maxTreeDepth = matchingTrees[t].length;
         }
     }
 
     // No layers to parse
-    if (treeDepth === 0) {
+    if (maxTreeDepth === 0) {
         return null;
     }
 
     // Merged draw group object
-    let draw = {
-        visible: true, // visible by default
+    const draw = {
+        visible: true // visible by default
     };
 
-    // Iterate trees in parallel
-    for (let x=0; x < treeDepth; x++) {
+    // Iterate layer trees in parallel
+    const draws = []; // matching draw groups in priority order
+    const frozen = []; // any frozen draw groups, in priority order
+    for (let depth = 0; depth < maxTreeDepth; depth++) {
         // Pull out the requested draw group, for each tree, at this depth (avoiding duplicates at the same level in tree)
-        draws = [];
-        matchingTrees.forEach(tree => {
-            if (tree[x] && tree[x][group] && draws.indexOf(tree[x][group]) === -1) {
-                draws.push(tree[x][group]);
+        matchingTrees.forEach((tree, column) => {
+            if (tree[depth] && tree[depth][group] && draws.indexOf(tree[depth][group]) === -1) {
+                draws.push(tree[depth][group]);
+
+                // Set or unset frozen draw group for this layer tree
+                if (tree[depth][group].freeze === true) {
+                    frozen[column] = frozen[column] || [];
+                    frozen[column].unshift(tree[depth][group]); // reverse order so frozen ancestors take priority
+                }
             }
         });
         if (draws.length === 0) {
             continue;
         }
-
-        // Merge draw objects
-        mergeObjects(draw, ...draws);
     }
+
+    // Add frozen draw groups (in layer priority order)
+    // If needed, merge multiple frozen groups within each tree (inverse order, so ancestors win, not descendants)
+    draws.push(
+        ...frozen
+            .filter(x => x)
+            .map(f => f.length > 1 ? mergeObjects({}, ...f) : f[0])
+    );
+
+    // Merge draw objects
+    mergeObjects(draw, ...draws);
 
     // Short-circuit if not visible
     if (draw.visible === false) {
